@@ -1,0 +1,11 @@
+name = "gorrion"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 0.51.0"
+pog = ">= 4.1.0"
+simplifile = ">= 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0"
