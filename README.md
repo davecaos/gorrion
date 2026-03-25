@@ -14,11 +14,17 @@ Reads plain `.sql` files from a directory, tracks applied migrations in a `_sche
 
 ## Installation
 
-Add gorrion as a path dependency in your `gleam.toml`:
+Add gorrion to your project:
+
+```sh
+gleam add gorrion
+```
+
+Or manually in your `gleam.toml`:
 
 ```toml
 [dependencies]
-gorrion = { path = "../gorrion" }
+gorrion = ">= 0.1.0 and < 1.0.0"
 ```
 
 ## Migration file convention
