@@ -1,6 +1,13 @@
 name = "gorrion"
 version = "0.1.0"
 target = "erlang"
+description = "Ecto-like database migration library for Gleam + PostgreSQL"
+licences = ["MIT"]
+repository = { type = "github", user = "davecaos", repo = "gorrion" }
+
+links = [
+  { title = "GitHub", href = "https://github.com/davecaos/gorrion" }
+]
 
 [dependencies]
 gleam_stdlib = ">= 0.51.0"

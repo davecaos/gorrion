@@ -2,6 +2,12 @@
   <img src="assets/logo.png" alt="Gorrión" width="400"/>
 </p>
 
+<p align="center">
+  <a href="https://hex.pm/packages/gorrion"><img src="https://img.shields.io/hexpm/v/gorrion.svg?style=flat-square" alt="Hex.pm version"/></a>
+  <a href="https://hex.pm/packages/gorrion"><img src="https://img.shields.io/hexpm/dt/gorrion.svg?style=flat-square" alt="Hex.pm downloads"/></a>
+  <a href="https://hex.pm/packages/gorrion"><img src="http://img.shields.io/hexpm/l/gorrion.svg?style=flat" alt="License"/></a>
+</p>
+
 Ecto-like database migration library for Gleam + PostgreSQL.
 
 Reads plain `.sql` files from a directory, tracks applied migrations in a `_schema_migrations` table, and supports forward migration and rollback.
