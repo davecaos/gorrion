@@ -1,7 +1,7 @@
 name = "gorrion"
 version = "0.1.0"
 target = "erlang"
-description = "Ecto-like database migration library for Gleam + PostgreSQL"
+description = "Ecto-like driver-agnostic database migration library for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "davecaos", repo = "gorrion" }
 
@@ -10,9 +10,11 @@ links = [
 ]
 
 [dependencies]
-gleam_stdlib = ">= 0.51.0"
-pog = ">= 4.1.0"
+gleam_stdlib = ">= 0.71.0"
+common_sql = ">= 1.0.0"
 simplifile = ">= 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0"
+common_sql_sqlite = ">= 1.0.2 and < 2.0.0"
+sqlight = ">= 1.0.3 and < 2.0.0"

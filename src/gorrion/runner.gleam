@@ -1,5 +1,6 @@
 //// Executes migration SQL within transactions.
 
+import common_sql as sql
 import gleam/dynamic/decode
 import gleam/int
 import gleam/io
@@ -9,12 +10,11 @@ import gorrion/tracker
 import gorrion/types.{
   type Migration, type MigrationError, MigrationFailed, RollbackFailed,
 }
-import pog
 
 /// Apply a single migration: execute the up SQL, then record it.
-/// Each migration runs inside a database transaction.
 pub fn apply_migration(
-  db: pog.Connection,
+  driver: sql.Driver(conn),
+  conn: conn,
   migration: Migration,
 ) -> Result(Nil, MigrationError) {
   io.println(
@@ -28,10 +28,7 @@ pub fn apply_migration(
 
   // Execute the up SQL
   use _ <- result.try(
-    migration.up
-    |> pog.query
-    |> pog.returning(decoder)
-    |> pog.execute(db)
+    sql.execute(driver, conn, sql.Sql(migration.up), [], decoder)
     |> result.map(fn(_) { Nil })
     |> result.map_error(fn(e) {
       MigrationFailed(
@@ -43,13 +40,14 @@ pub fn apply_migration(
   )
 
   // Record the migration as applied
-  tracker.record(db, migration.version, migration.name)
+  tracker.record(driver, conn, migration.version, migration.name)
 }
 
 /// Revert a single migration: execute the down SQL, then remove the record.
 /// If no down SQL was provided (empty string), just removes the tracking record.
 pub fn revert_migration(
-  db: pog.Connection,
+  driver: sql.Driver(conn),
+  conn: conn,
   migration: Migration,
 ) -> Result(Nil, MigrationError) {
   io.println(
@@ -62,16 +60,13 @@ pub fn revert_migration(
   case migration.down {
     "" -> {
       io.println("    (no down migration — removing record only)")
-      tracker.remove(db, migration.version)
+      tracker.remove(driver, conn, migration.version)
     }
     down_sql -> {
       let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
       use _ <- result.try(
-        down_sql
-        |> pog.query
-        |> pog.returning(decoder)
-        |> pog.execute(db)
+        sql.execute(driver, conn, sql.Sql(down_sql), [], decoder)
         |> result.map(fn(_) { Nil })
         |> result.map_error(fn(e) {
           RollbackFailed(
@@ -82,7 +77,7 @@ pub fn revert_migration(
         }),
       )
 
-      tracker.remove(db, migration.version)
+      tracker.remove(driver, conn, migration.version)
     }
   }
 }
