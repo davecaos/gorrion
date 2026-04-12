@@ -8,16 +8,20 @@
   <a href="https://hex.pm/packages/gorrion"><img src="http://img.shields.io/hexpm/l/gorrion.svg?style=flat" alt="License"/></a>
 </p>
 
-Ecto-like database migration library for Gleam + PostgreSQL.
+Ecto-like driver-agnostic database migration library for Gleam.
 
 Reads plain `.sql` files from a directory, tracks applied migrations in a `_schema_migrations` table, and supports forward migration and rollback.
 
+Works with any [common_sql](https://hex.pm/packages/common_sql) driver — SQLite, PostgreSQL, or any future driver.
+
 ## Installation
 
-Add gorrion to your project:
+Add gorrion and a driver to your project:
 
 ```sh
 gleam add gorrion
+gleam add common_sql_sqlite       # for SQLite
+# or: gleam add common_sql_postgresql  # for PostgreSQL
 ```
 
 Or manually in your `gleam.toml`:
@@ -25,6 +29,7 @@ Or manually in your `gleam.toml`:
 ```toml
 [dependencies]
 gorrion = ">= 0.1.0 and < 1.0.0"
+common_sql_sqlite = ">= 1.0.3"   # or common_sql_postgresql
 ```
 
 ## Migration file convention
@@ -49,15 +54,18 @@ The version number `NNN` can be any integer (e.g., `001`, `042`, `20240101`). Mi
 ## Usage
 
 ```gleam
+import common_sql as sql
+import common_sql_sqlite  // or common_sql_postgresql
 import gorrion
 import gorrion/types
-import pog
 
 pub fn main() {
-  // ... set up your pog connection ...
+  let driver = common_sql_sqlite.driver()
+
+  use conn <- sql.with_connection(driver, "./myapp.db") {
 
   // Run all pending migrations
-  case gorrion.migrate(db: db, migrations_dir: "migrations") {
+  case gorrion.migrate(driver:, conn:, migrations_dir: "migrations") {
     Ok(Nil) -> io.println("Done")
     Error(types.MigrationFailed(version:, name:, reason:)) ->
       io.println("Migration " <> int.to_string(version) <> " failed: " <> reason)
@@ -71,24 +79,24 @@ pub fn main() {
 
 ## API
 
-### `gorrion.migrate(db:, migrations_dir:)`
+### `gorrion.migrate(driver:, conn:, migrations_dir:)`
 
 Runs all pending migrations in version order. Skips migrations already recorded in `_schema_migrations`.
 
-### `gorrion.rollback(db:, migrations_dir:)`
+### `gorrion.rollback(driver:, conn:, migrations_dir:)`
 
 Rolls back the most recently applied migration. Executes the `_down.sql` file if it exists, otherwise just removes the tracking record.
 
-### `gorrion.rollback_to(db:, migrations_dir:, target_version:)`
+### `gorrion.rollback_to(driver:, conn:, migrations_dir:, target_version:)`
 
 Rolls back all migrations above `target_version` in reverse order.
 
-### `gorrion.status(db:, migrations_dir:)`
+### `gorrion.status(driver:, conn:, migrations_dir:)`
 
 Returns a `MigrationStatus` with lists of applied and pending migrations:
 
 ```gleam
-case gorrion.status(db: db, migrations_dir: "migrations") {
+case gorrion.status(driver:, conn:, migrations_dir: "migrations") {
   Ok(status) -> {
     io.println("Applied: " <> int.to_string(list.length(status.applied)))
     io.println("Pending: " <> int.to_string(list.length(status.pending)))
@@ -138,6 +146,6 @@ The `_schema_migrations` table:
 CREATE TABLE _schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```

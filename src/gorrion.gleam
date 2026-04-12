@@ -1,21 +1,26 @@
-//// Gorrion — Ecto-like database migration library for Gleam.
+//// Gorrion — Ecto-like driver-agnostic database migration library for Gleam.
 ////
 //// Reads migration SQL from .sql files on disk, tracks applied migrations
-//// in a _schema_migrations table, and supports forward migration and rollback.
+//// in a `_schema_migrations` table, and supports forward migration and rollback.
+////
+//// Built on top of
+//// [common_sql](https://hex.pm/packages/common_sql) and works with any
+//// driver — SQLite, PostgreSQL, or any future driver package.
 ////
 //// ## Usage
 ////
 //// ```gleam
 //// // Run all pending migrations
-//// gorrion.migrate(db, "migrations")
+//// let assert Ok(_) = gorrion.migrate(driver:, conn:, migrations_dir: "migrations")
 ////
 //// // Roll back the most recent migration
-//// gorrion.rollback(db, "migrations")
+//// let assert Ok(_) = gorrion.rollback(driver:, conn:, migrations_dir: "migrations")
 ////
 //// // Check migration status
-//// gorrion.status(db, "migrations")
+//// let assert Ok(status) = gorrion.status(driver:, conn:, migrations_dir: "migrations")
 //// ```
 
+import common_sql as sql
 import gleam/int
 import gleam/io
 import gleam/list
@@ -31,11 +36,12 @@ import gorrion/types.{
 
 /// Run all pending migrations in version order.
 pub fn migrate(
-  db db: pog.Connection,
+  driver driver: sql.Driver(conn),
+  conn conn: conn,
   migrations_dir dir: String,
 ) -> Result(Nil, MigrationError) {
   use migrations <- result.try(loader.load_migrations(dir))
-  use #(pending, _applied) <- result.try(resolve(db, migrations))
+  use #(pending, _applied) <- result.try(resolve(driver, conn, migrations))
 
   case pending {
     [] -> {
@@ -48,20 +54,22 @@ pub fn migrate(
         <> int.to_string(list.length(pending))
         <> " pending migration(s)...",
       )
-      list.try_fold(pending, Nil, fn(_, m) { runner.apply_migration(db, m) })
+      list.try_fold(pending, Nil, fn(_, m) {
+        runner.apply_migration(driver, conn, m)
+      })
     }
   }
 }
 
 /// Roll back the most recently applied migration.
 pub fn rollback(
-  db db: pog.Connection,
+  driver driver: sql.Driver(conn),
+  conn conn: conn,
   migrations_dir dir: String,
 ) -> Result(Nil, MigrationError) {
   use migrations <- result.try(loader.load_migrations(dir))
-  use #(_pending, applied) <- result.try(resolve(db, migrations))
+  use #(_pending, applied) <- result.try(resolve(driver, conn, migrations))
 
-  // Find the migration with the highest applied version
   let applied_versions =
     applied
     |> list.map(fn(a) { a.version })
@@ -77,26 +85,26 @@ pub fn rollback(
     Error(_) -> Error(NoMigrationsToRollback)
     Ok(migration) -> {
       io.println("Rolling back 1 migration...")
-      runner.revert_migration(db, migration)
+      runner.revert_migration(driver, conn, migration)
     }
   }
 }
 
 /// Roll back all migrations down to (but not including) the target version.
 pub fn rollback_to(
-  db db: pog.Connection,
+  driver driver: sql.Driver(conn),
+  conn conn: conn,
   migrations_dir dir: String,
   target_version target: Int,
 ) -> Result(Nil, MigrationError) {
   use migrations <- result.try(loader.load_migrations(dir))
-  use #(_pending, applied) <- result.try(resolve(db, migrations))
+  use #(_pending, applied) <- result.try(resolve(driver, conn, migrations))
 
   let applied_versions =
     applied
     |> list.map(fn(a) { a.version })
     |> set.from_list
 
-  // Get applied migrations above the target, in descending order
   let to_revert =
     migrations
     |> list.filter(fn(m) {
@@ -116,7 +124,7 @@ pub fn rollback_to(
         <> " migration(s)...",
       )
       list.try_fold(to_revert, Nil, fn(_, m) {
-        runner.revert_migration(db, m)
+        runner.revert_migration(driver, conn, m)
       })
     }
   }
@@ -124,25 +132,24 @@ pub fn rollback_to(
 
 /// Get the current migration status: which are applied and which are pending.
 pub fn status(
-  db db: pog.Connection,
+  driver driver: sql.Driver(conn),
+  conn conn: conn,
   migrations_dir dir: String,
 ) -> Result(MigrationStatus, MigrationError) {
   use migrations <- result.try(loader.load_migrations(dir))
-  use #(pending, applied) <- result.try(resolve(db, migrations))
+  use #(pending, applied) <- result.try(resolve(driver, conn, migrations))
   Ok(MigrationStatus(applied:, pending:))
 }
 
 /// Internal: ensure tracking table exists, get applied migrations,
 /// and compute which migrations are pending.
 fn resolve(
-  db: pog.Connection,
+  driver: sql.Driver(conn),
+  conn: conn,
   migrations: List(Migration),
-) -> Result(
-  #(List(Migration), List(types.AppliedMigration)),
-  MigrationError,
-) {
-  use _ <- result.try(tracker.ensure_table(db))
-  use applied <- result.try(tracker.get_applied(db))
+) -> Result(#(List(Migration), List(types.AppliedMigration)), MigrationError) {
+  use _ <- result.try(tracker.ensure_table(driver, conn))
+  use applied <- result.try(tracker.get_applied(driver, conn))
 
   let applied_versions =
     applied
@@ -156,6 +163,3 @@ fn resolve(
 
   Ok(#(pending, applied))
 }
-
-// Re-export types for convenience
-import pog
