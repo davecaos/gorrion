@@ -12,7 +12,9 @@ import gorrion/types.{
 import pog
 
 /// Apply a single migration: execute the up SQL, then record it.
-/// Each migration runs inside a database transaction.
+/// Both steps run inside the same database transaction so that a crash or
+/// rollback between them can never leave the schema mutated without a
+/// matching `_schema_migrations` row (or vice versa).
 pub fn apply_migration(
   db: pog.Connection,
   migration: Migration,
@@ -26,28 +28,42 @@ pub fn apply_migration(
 
   let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-  // Execute the up SQL
-  use _ <- result.try(
-    migration.up
-    |> pog.query
-    |> pog.returning(decoder)
-    |> pog.execute(db)
-    |> result.map(fn(_) { Nil })
-    |> result.map_error(fn(e) {
-      MigrationFailed(
+  let tx_result =
+    pog.transaction(db, fn(tx) {
+      use _ <- result.try(
+        migration.up
+        |> pog.query
+        |> pog.returning(decoder)
+        |> pog.execute(tx)
+        |> result.map(fn(_) { Nil })
+        |> result.map_error(fn(e) {
+          MigrationFailed(
+            version: migration.version,
+            name: migration.name,
+            reason: string.inspect(e),
+          )
+        }),
+      )
+
+      tracker.record(tx, migration.version, migration.name)
+    })
+
+  case tx_result {
+    Ok(Nil) -> Ok(Nil)
+    Error(pog.TransactionRolledBack(migration_error)) -> Error(migration_error)
+    Error(pog.TransactionQueryError(query_error)) ->
+      Error(MigrationFailed(
         version: migration.version,
         name: migration.name,
-        reason: string.inspect(e),
-      )
-    }),
-  )
-
-  // Record the migration as applied
-  tracker.record(db, migration.version, migration.name)
+        reason: string.inspect(query_error),
+      ))
+  }
 }
 
 /// Revert a single migration: execute the down SQL, then remove the record.
 /// If no down SQL was provided (empty string), just removes the tracking record.
+/// Both steps run inside the same transaction for the same atomicity reason
+/// described on `apply_migration`.
 pub fn revert_migration(
   db: pog.Connection,
   migration: Migration,
@@ -67,22 +83,37 @@ pub fn revert_migration(
     down_sql -> {
       let decoder = decode.map(decode.dynamic, fn(_) { Nil })
 
-      use _ <- result.try(
-        down_sql
-        |> pog.query
-        |> pog.returning(decoder)
-        |> pog.execute(db)
-        |> result.map(fn(_) { Nil })
-        |> result.map_error(fn(e) {
-          RollbackFailed(
+      let tx_result =
+        pog.transaction(db, fn(tx) {
+          use _ <- result.try(
+            down_sql
+            |> pog.query
+            |> pog.returning(decoder)
+            |> pog.execute(tx)
+            |> result.map(fn(_) { Nil })
+            |> result.map_error(fn(e) {
+              RollbackFailed(
+                version: migration.version,
+                name: migration.name,
+                reason: string.inspect(e),
+              )
+            }),
+          )
+
+          tracker.remove(tx, migration.version)
+        })
+
+      case tx_result {
+        Ok(Nil) -> Ok(Nil)
+        Error(pog.TransactionRolledBack(migration_error)) ->
+          Error(migration_error)
+        Error(pog.TransactionQueryError(query_error)) ->
+          Error(RollbackFailed(
             version: migration.version,
             name: migration.name,
-            reason: string.inspect(e),
-          )
-        }),
-      )
-
-      tracker.remove(db, migration.version)
+            reason: string.inspect(query_error),
+          ))
+      }
     }
   }
 }
